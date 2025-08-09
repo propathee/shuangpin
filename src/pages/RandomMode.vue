@@ -113,7 +113,7 @@ watch(showMistakes, (v: boolean) => {
       <a href="javascript:void(0)" @click="toggleMistakes">
         {{ showMistakes ? '隐藏错字' : '查看错字' }}
       </a>
-      <a href="javascript:void(0)" style="margin-left: 12px;" @click="clearMistakes">清空</a>
+      <a v-if="showMistakes" href="javascript:void(0)" style="margin-left: 12px;" @click="clearMistakes">清空</a>
     </div>
 
     <div v-if="showMistakes" ref="panelRef" class="mistake-panel" :style="{ top: panelTop + 'px' }">
@@ -143,17 +143,17 @@ watch(showMistakes, (v: boolean) => {
 @import "../styles/color.less";
 
 .random-mode {
-  position: relative;
   height: 100%;
 }
 
 .mistake-toggle {
   position: absolute;
   left: var(--app-padding);
+  // 与 SingleMode.vue 中的 `.summary` 一致，保持水平对齐
   bottom: var(--app-padding);
 
   a {
-    color: var(--link-color, #1677ff);
+    color: var(--primary-color);
     cursor: pointer;
     text-decoration: none;
     font-weight: bold;
