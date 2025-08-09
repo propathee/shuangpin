@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import SingleMode from '../components/SingleMode.vue';
 import { hanziList } from '../utils/hanzi'
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 
 function nextChar() {
   const index = Math.floor(Math.random() * hanziList.hanzi.length)
@@ -24,6 +24,35 @@ interface MistakeItem {
 
 const showMistakes = ref(false)
 const mistakes = ref<MistakeItem[]>([])
+const panelRef = ref<HTMLDivElement | null>(null)
+const panelTop = ref<number>(30) // 垂直位置（px），默认与 --app-padding 一致
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n))
+}
+
+function repositionPanel() {
+  // 目标：使表格在竖直方向与键盘高度大致居中（与键盘中线平齐）
+  const keyboardEl = document.getElementById('keyboard')
+  const panelEl = panelRef.value
+  if (!keyboardEl || !panelEl) return
+
+  const kbRect = keyboardEl.getBoundingClientRect()
+  const panelRect = panelEl.getBoundingClientRect()
+
+  // 以键盘垂直中线为基准，将表格垂直居中到该位置
+  const targetCenterY = kbRect.top + kbRect.height / 2
+  const desiredTop = targetCenterY - panelRect.height / 2
+
+  const padding = 30 // 与 --app-padding 对齐
+  const viewportH = window.innerHeight
+  const maxTop = viewportH - padding - panelRect.height
+  panelTop.value = clamp(desiredTop, padding, Math.max(padding, maxTop))
+}
+
+function onResize() {
+  if (showMistakes.value) repositionPanel()
+}
 
 function onFullInput(payload: {
   hanzi: string
@@ -54,11 +83,26 @@ function onFullInput(payload: {
 
 function toggleMistakes() {
   showMistakes.value = !showMistakes.value
+  if (showMistakes.value) {
+    nextTick().then(repositionPanel)
+  }
 }
 
 function clearMistakes() {
   mistakes.value = []
 }
+
+onMounted(() => {
+  window.addEventListener('resize', onResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize)
+})
+
+watch(showMistakes, (v: boolean) => {
+  if (v) nextTick().then(repositionPanel)
+})
 </script>
 
 <template>
@@ -72,7 +116,7 @@ function clearMistakes() {
       <a href="javascript:void(0)" style="margin-left: 12px;" @click="clearMistakes">清空</a>
     </div>
 
-    <div v-if="showMistakes" class="mistake-panel">
+    <div v-if="showMistakes" ref="panelRef" class="mistake-panel" :style="{ top: panelTop + 'px' }">
       <div class="mistake-header">
         <div class="col hanzi">错字</div>
         <div class="col pinyin">拼音</div>
@@ -122,10 +166,9 @@ function clearMistakes() {
   z-index: 1000;
   left: 50%;
   transform: translateX(-50%);
-  top: var(--app-padding);
 
   // 更宽，避免第三列被截断
-  width: 640px;
+  width: 560px;
   max-width: calc(100% - 2 * var(--app-padding));
   max-height: calc(100% - 2 * var(--app-padding));
 
@@ -167,9 +210,9 @@ function clearMistakes() {
 }
 
 .col {
-  &.hanzi { width: 64px; }
-  &.pinyin { width: 120px; color: var(--gray-6); }
-  // 让按键列可换行，保证内容完整展示
+  &.hanzi { width: 56px; }
+  &.pinyin { width: 110px; color: var(--gray-6); }
+  // 让按键列可换行，保证内容完整展示，同时避免过多留白
   &.keys { flex: 1; white-space: normal; overflow-wrap: anywhere; }
 }
 
