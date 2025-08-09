@@ -21,6 +21,24 @@ export interface SingleModeProps {
   mode?: "Lead" | "Follow";
 }
 
+// 新增：对外暴露一次完整输入事件，便于上层页面（如随机模式）记录错字详情
+const emit = defineEmits<{
+  (
+    e: "full-input",
+    payload: {
+      hanzi: string;
+      pinyin: string;
+      leadKey?: string;
+      followKey?: string;
+      valid: boolean;
+      resolvedLead: string;
+      resolvedFollow: string;
+      correctLeadKey?: string;
+      correctFollowKey?: string;
+    }
+  ): void;
+}>();
+
 function nextChar() {
   if (!props.mode) {
     return props.nextChar?.() ?? "";
@@ -37,14 +55,16 @@ const isValid = ref(false);
 
 const summary = ref(new TypingSummary());
 
-const keys = {
+// 明确键位列表映射的类型，避免隐式 any
+const modeKeyToKeysMap: Record<"Lead" | "Follow" | "", string[]> = {
   Lead: leadKeys,
   Follow: followKeys,
   "": [] as string[],
-}[props.mode ?? ""];
+};
+const keys = modeKeyToKeysMap[(props.mode ?? "") as "Lead" | "Follow" | ""];
 
 const progresses = computed(() =>
-  keys.map((v) => {
+  keys.map((v: string) => {
     return {
       key: v,
       progress: store.getProgress(v),
@@ -53,9 +73,8 @@ const progresses = computed(() =>
 );
 
 const listMenuItems = computed(() => {
-  return progresses.value.map(
-    (v) =>
-      `${v.key.toUpperCase()} ${(store.getAccuracy(v.key) * 100).toFixed(2)}%`
+  return progresses.value.map((v: { key: string }) =>
+    `${v.key.toUpperCase()} ${(store.getAccuracy(v.key) * 100).toFixed(2)}%`
   );
 });
 
@@ -120,6 +139,22 @@ function onSeq([lead, follow]: [string?, string?]) {
   const fullInput = !!lead && !!follow;
   if (fullInput) {
     summary.value.onValid(res.valid);
+
+    // 新增：发出一次完整输入事件，包含当前汉字、目标拼音、实际按键与解析后的拼音片段
+    const sp = store.mode().py2sp.get(answer.value) ?? "";
+    const correctLeadKey = sp.length >= 1 ? sp[0] : undefined;
+    const correctFollowKey = sp.length >= 2 ? sp[1] : undefined;
+    emit("full-input", {
+      hanzi: (hanziSeq.value.at(-1) ?? ""),
+      pinyin: answer.value,
+      leadKey: lead,
+      followKey: follow,
+      valid: res.valid,
+      resolvedLead: res.lead,
+      resolvedFollow: res.follow,
+      correctLeadKey,
+      correctFollowKey,
+    });
   }
 
   pinyin.value = [res.lead, res.follow].filter((v) => !!v) as string[];
