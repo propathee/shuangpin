@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch: # 允许你在 GitHub Actions 页面手动触发
 
 permissions:
   contents: write
@@ -13,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout 🛎️
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install and Build 🔧
         run: |
@@ -23,4 +24,7 @@ jobs:
       - name: Deploy 🚀
         uses: JamesIves/github-pages-deploy-action@v4
         with:
+          # 指定部署分支，默认是gh-pages
+          branch: gh-pages
+          # 构建输出的文件夹，Vite 默认为 dist
           folder: dist
