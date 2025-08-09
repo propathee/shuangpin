@@ -117,15 +117,24 @@ function clearMistakes() {
 }
 
 .mistake-panel {
-  position: absolute;
-  left: var(--app-padding);
+  // 置于顶层并居中显示
+  position: fixed;
+  z-index: 1000;
+  left: 50%;
+  transform: translateX(-50%);
   top: var(--app-padding);
-  width: 320px;
+
+  // 更宽，避免第三列被截断
+  width: 640px;
+  max-width: calc(100% - 2 * var(--app-padding));
   max-height: calc(100% - 2 * var(--app-padding));
-  border: 1px solid rgba(0,0,0,0.1);
+
+  // 与整体风格一致：实色背景，轻边框
+  border: 1px solid var(--gray-010);
   border-radius: 8px;
-  background: rgba(255,255,255,0.9);
-  backdrop-filter: blur(2px);
+  background: var(--white);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.08);
+
   display: flex;
   flex-direction: column;
 
@@ -158,9 +167,10 @@ function clearMistakes() {
 }
 
 .col {
-  &.hanzi { width: 56px; }
-  &.pinyin { width: 96px; color: #666; }
-  &.keys { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  &.hanzi { width: 64px; }
+  &.pinyin { width: 120px; color: var(--gray-6); }
+  // 让按键列可换行，保证内容完整展示
+  &.keys { flex: 1; white-space: normal; overflow-wrap: anywhere; }
 }
 
 .empty {
