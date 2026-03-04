@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, watchPostEffect } from "vue";
 import { storeToRefs } from "pinia";
-import { ref, onActivated, onDeactivated } from "vue";
+import { ref, onMounted, onActivated, onDeactivated, onUnmounted } from "vue";
 import { useStore } from "../store";
 import { mapConfigToLayout } from "../utils/keyboard";
 
@@ -20,19 +20,23 @@ const scale = ref(1);
 const onPressKey = (e: KeyboardEvent) => pressKey(e.key);
 const onReleaseKey = (e: KeyboardEvent) => releaseKey(e.key);
 
-onActivated(() => {
+function addListeners() {
   document.addEventListener("keydown", onPressKey);
   document.addEventListener("keyup", onReleaseKey);
   window.addEventListener("resize", resizeKeyboard);
-
   resizeKeyboard();
-});
+}
 
-onDeactivated(() => {
+function removeListeners() {
   document.removeEventListener("keydown", onPressKey);
   document.removeEventListener("keyup", onReleaseKey);
   window.removeEventListener("resize", resizeKeyboard);
-});
+}
+
+onMounted(addListeners);
+onActivated(addListeners);
+onDeactivated(removeListeners);
+onUnmounted(removeListeners);
 
 function resizeKeyboard() {
   const screenWidth = document.getElementById("app")?.clientWidth ?? 920;

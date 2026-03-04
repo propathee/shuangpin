@@ -5,7 +5,7 @@ import Pinyin from "../components/Pinyin.vue";
 import TypeSummary from "../components/TypeSummary.vue";
 import MenuList from "../components/MenuList.vue";
 
-import { onActivated, onDeactivated, ref, watchPostEffect } from "vue";
+import { onActivated, onDeactivated, onMounted, onUnmounted, ref, watchPostEffect } from "vue";
 import { matchSpToPinyin } from "../utils/keyboard";
 import { useStore } from "../store";
 import { computed } from "vue";
@@ -106,13 +106,10 @@ function onKeyPressed() {
   summary.value.onKeyPressed();
 }
 
-onActivated(() => {
-  document.addEventListener("keypress", onKeyPressed);
-});
-
-onDeactivated(() => {
-  document.removeEventListener("keypress", onKeyPressed);
-});
+onMounted(() => document.addEventListener("keypress", onKeyPressed));
+onActivated(() => document.addEventListener("keypress", onKeyPressed));
+onDeactivated(() => document.removeEventListener("keypress", onKeyPressed));
+onUnmounted(() => document.removeEventListener("keypress", onKeyPressed));
 
 const answer = computed(() => {
   const pys = getPinyinOf(hanziSeq.value.at(-1) ?? "");
