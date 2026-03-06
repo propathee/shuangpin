@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import SingleMode from '../components/SingleMode.vue';
 import { hanziList } from '../utils/hanzi'
+import {
+  buildWrongWeights,
+  createReinforcementGenerator,
+  getSlowCharWeights,
+  normalizeDuration,
+  type CharTiming,
+} from '../utils/reinforcement'
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 
 function defaultNextChar() {
@@ -21,19 +28,13 @@ interface MistakeItem {
   timestamp: number
 }
 
-interface CharTiming {
-  hanzi: string
-  pinyin: string
-  duration: number
-}
-
 const showMistakes = ref(false)
 const mistakes = ref<MistakeItem[]>([])
 const panelRef = ref<HTMLDivElement | null>(null)
 const panelTop = ref<number>(30)
 
 // 每个字的耗时追踪
-let charStartTime = performance.now()
+let charStartTime: number | null = null
 const charTimings = ref<CharTiming[]>([])
 
 // 动态 nextChar 与 key（用于强化训练模式切换）
@@ -94,13 +95,19 @@ function onFullInput(payload: {
     })
   } else {
     const now = performance.now()
-    charTimings.value.push({
-      hanzi: payload.hanzi,
-      pinyin: payload.pinyin,
-      duration: now - charStartTime,
-    })
-    charStartTime = now
+    const duration = normalizeDuration(charStartTime, now)
+    if (duration !== null) {
+      charTimings.value.push({
+        hanzi: payload.hanzi,
+        pinyin: payload.pinyin,
+        duration,
+      })
+    }
   }
+}
+
+function onCharReady() {
+  charStartTime = performance.now()
 }
 
 function toggleMistakes() {
@@ -116,122 +123,26 @@ function clearMistakes() {
 
 // ── 强化训练 ──
 
-function getSlowChars(wrongSet: Set<string>): string[] {
-  const nonWrongTimings = charTimings.value.filter((t: CharTiming) => !wrongSet.has(t.hanzi))
-  if (nonWrongTimings.length === 0) return []
-  const sorted = [...nonWrongTimings].sort((a, b) => b.duration - a.duration)
-  const cutoff = Math.max(1, Math.ceil(sorted.length * 0.2))
-  return Array.from(new Set<string>(sorted.slice(0, cutoff).map((t: CharTiming) => t.hanzi)))
-}
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr]
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]]
-  }
-  return a
-}
-
-function spreadEvenly(chars: string[], count: number): string[] {
-  if (chars.length === 0 || count <= 0) return []
-  const result: string[] = []
-  for (let i = 0; i < count; i++) {
-    result.push(chars[i % chars.length])
-  }
-  return result
-}
-
-function arrangeNoAdjacent(arr: string[]): string[] {
-  const counts = new Map<string, number>()
-  for (const ch of arr) {
-    counts.set(ch, (counts.get(ch) ?? 0) + 1)
-  }
-
-  const result: string[] = []
-  let last = ''
-  while (result.length < arr.length) {
-    const entries = Array.from(counts.entries()).filter(([, n]) => n > 0)
-    if (entries.length === 0) break
-
-    const allowed = entries.filter(([ch]) => ch !== last)
-    const candidatePool = allowed.length > 0 ? allowed : entries
-    const maxCount = Math.max(...candidatePool.map(([, n]) => n))
-    const topCandidates = candidatePool.filter(([, n]) => n === maxCount)
-    const [picked] = topCandidates[Math.floor(Math.random() * topCandidates.length)]
-
-    result.push(picked)
-    counts.set(picked, (counts.get(picked) ?? 1) - 1)
-    last = picked
-  }
-
-  return result
-}
-
 function createReinforcementNextChar(
-  wrongChars: string[],
-  slowChars: string[],
-  recentChars: string[]
+  wrongWeights: Map<string, number>,
+  slowWeights: Map<string, number>
 ): () => string {
-  const wrongSet = new Set(wrongChars)
-  const uniqueSlowChars = Array.from(new Set(slowChars))
-
-  // 优先使用慢字中的非错字；若为空则回退到本轮练习的其他字，避免退化为“全错字池”
-  let nonWrongChars = uniqueSlowChars.filter(ch => !wrongSet.has(ch))
-  if (nonWrongChars.length === 0) {
-    nonWrongChars = recentChars.filter(ch => !wrongSet.has(ch))
-  }
-  if (nonWrongChars.length === 0) {
-    nonWrongChars = shuffle(hanziList.hanzi.filter(ch => !wrongSet.has(ch))).slice(0, 40)
-  }
-
-  function buildPool(): string[] {
-    const sourceChars = wrongChars.length > 0
-      ? [...wrongChars, ...nonWrongChars]
-      : uniqueSlowChars
-    if (sourceChars.length === 0) return []
-
-    const poolSize = Math.max(30, sourceChars.length * 3)
-
-    let pool: string[]
-    if (wrongChars.length > 0 && nonWrongChars.length > 0) {
-      // 错字固定约 30%，避免体感“错字占比过高”
-      const wrongSlots = Math.max(wrongChars.length, Math.round(poolSize * 0.3))
-      const otherSlots = poolSize - wrongSlots
-      pool = [
-        ...spreadEvenly(wrongChars, wrongSlots),
-        ...spreadEvenly(nonWrongChars, otherSlots),
-      ]
-    } else {
-      pool = spreadEvenly(sourceChars, poolSize)
-    }
-
-    return arrangeNoAdjacent(pool)
-  }
-
-  let sequence = buildPool()
-  let idx = 0
+  const nextChar = createReinforcementGenerator({ wrongWeights, slowWeights })
 
   return () => {
-    if (sequence.length === 0) return defaultNextChar()
-    if (idx >= sequence.length) {
-      sequence = buildPool()
-      idx = 0
-    }
-    return sequence[idx++]
+    return nextChar() ?? defaultNextChar()
   }
 }
 
 function startReinforcement() {
-  const wrongChars = Array.from(new Set<string>(mistakes.value.map((m: MistakeItem) => m.hanzi)))
-  const slowChars: string[] = getSlowChars(new Set(wrongChars))
-  const recentChars = Array.from(new Set<string>(charTimings.value.map((t: CharTiming) => t.hanzi)))
+  const wrongWeights = buildWrongWeights(mistakes.value.map((m: MistakeItem) => m.hanzi))
+  const slowWeights = getSlowCharWeights(charTimings.value, new Set(wrongWeights.keys()))
 
-  activeNextChar.value = createReinforcementNextChar(wrongChars, slowChars, recentChars)
+  activeNextChar.value = createReinforcementNextChar(wrongWeights, slowWeights)
   showMistakes.value = false
   mistakes.value = []
   charTimings.value = []
-  charStartTime = performance.now()
+  charStartTime = null
   singleModeKey.value++
 }
 
@@ -250,7 +161,12 @@ watch(showMistakes, (v: boolean) => {
 
 <template>
   <div class="random-mode">
-    <single-mode :key="singleModeKey" :next-char="activeNextChar" @full-input="onFullInput" />
+    <single-mode
+      :key="singleModeKey"
+      :next-char="activeNextChar"
+      @char-ready="onCharReady"
+      @full-input="onFullInput"
+    />
 
     <div class="mistake-toggle">
       <a href="javascript:void(0)" @click="toggleMistakes">

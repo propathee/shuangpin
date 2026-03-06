@@ -5,7 +5,14 @@ import Pinyin from "../components/Pinyin.vue";
 import TypeSummary from "../components/TypeSummary.vue";
 import MenuList from "../components/MenuList.vue";
 
-import { onActivated, onDeactivated, onMounted, onUnmounted, ref, watchPostEffect } from "vue";
+import {
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  ref,
+  watchPostEffect,
+} from "vue";
 import { matchSpToPinyin } from "../utils/keyboard";
 import { useStore } from "../store";
 import { computed } from "vue";
@@ -23,6 +30,13 @@ export interface SingleModeProps {
 
 // 新增：对外暴露一次完整输入事件，便于上层页面（如随机模式）记录错字详情
 const emit = defineEmits<{
+  (
+    e: "char-ready",
+    payload: {
+      hanzi: string;
+      pinyin: string;
+    }
+  ): void;
   (
     e: "full-input",
     payload: {
@@ -106,8 +120,25 @@ function onKeyPressed() {
   summary.value.onKeyPressed();
 }
 
-onMounted(() => document.addEventListener("keypress", onKeyPressed));
-onActivated(() => document.addEventListener("keypress", onKeyPressed));
+function emitCharReady() {
+  const hanzi = hanziSeq.value.at(-1) ?? "";
+  if (!hanzi) {
+    return;
+  }
+  emit("char-ready", {
+    hanzi,
+    pinyin: answer.value,
+  });
+}
+
+onMounted(() => {
+  document.addEventListener("keypress", onKeyPressed);
+  emitCharReady();
+});
+onActivated(() => {
+  document.addEventListener("keypress", onKeyPressed);
+  emitCharReady();
+});
 onDeactivated(() => document.removeEventListener("keypress", onKeyPressed));
 onUnmounted(() => document.removeEventListener("keypress", onKeyPressed));
 
@@ -168,6 +199,7 @@ watchPostEffect(() => {
       hanziSeq.value.pop();
       pinyin.value = [];
       isValid.value = false;
+      emitCharReady();
     }, 100);
   }
 });
