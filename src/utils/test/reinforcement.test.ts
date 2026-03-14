@@ -92,4 +92,27 @@ describe("强化训练逻辑", () => {
       expect(picked[i]).not.toBe(picked[i - 1]);
     }
   });
+
+  test("错字和慢字会在序列中更均匀地穿插", () => {
+    const slowWeights = new Map<string, number>(
+      Array.from({ length: 21 }, (_, index) => [`慢${index + 1}`, 1])
+    );
+    const sequence = buildReinforcementSequence({
+      wrongWeights: new Map([
+        ["错1", 3],
+        ["错2", 2],
+      ]),
+      slowWeights,
+      minPoolSize: 30,
+      random: () => 0,
+    });
+
+    const firstSeven = sequence.slice(0, 7);
+    const wrongCountInFirstTen = sequence
+      .slice(0, 10)
+      .filter((hanzi) => hanzi.startsWith("错")).length;
+
+    expect(firstSeven.some((hanzi) => hanzi.startsWith("慢"))).toBe(true);
+    expect(wrongCountInFirstTen).toBeLessThan(7);
+  });
 });

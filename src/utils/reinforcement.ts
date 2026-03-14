@@ -116,29 +116,82 @@ function pickByLargestRemainder(
   return allocated;
 }
 
-function pickNextChar(
+function updateCount(
   counts: Map<string, number>,
-  last: string,
-  random: () => number
+  hanzi: string,
+  delta: number
 ) {
-  const candidates = Array.from(counts.entries()).filter(
-    ([hanzi, count]) => count > 0 && hanzi !== last
-  );
-  if (candidates.length === 0) {
-    return undefined;
+  const next = (counts.get(hanzi) ?? 0) + delta;
+  if (next <= 0) {
+    counts.delete(hanzi);
+    return;
+  }
+  counts.set(hanzi, next);
+}
+
+function buildSmoothSequence(
+  counts: Map<string, number>,
+  random: () => number,
+  lastChar: string
+) {
+  const remaining = trimCountsForAdjacency(counts, lastChar);
+  const baseWeights = cloneWeights(remaining);
+  const current = new Map<string, number>();
+  const sequence: string[] = [];
+  let last = lastChar;
+
+  while (remaining.size > 0) {
+    const activeEntries = Array.from(remaining.entries());
+    const activeTotalWeight = activeEntries.reduce(
+      (sum, [hanzi]) => sum + (baseWeights.get(hanzi) ?? 0),
+      0
+    );
+
+    const candidates = activeEntries
+      .map(([hanzi, count]) => {
+        const nextScore = (current.get(hanzi) ?? 0) + (baseWeights.get(hanzi) ?? 0);
+        current.set(hanzi, nextScore);
+        return { hanzi, count, score: nextScore };
+      })
+      .sort((a, b) => {
+        if (b.score !== a.score) {
+          return b.score - a.score;
+        }
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+        if (a.hanzi === b.hanzi) {
+          return 0;
+        }
+        return random() < 0.5 ? -1 : 1;
+      });
+
+    let picked: string | undefined;
+    for (const candidate of candidates) {
+      if (candidate.hanzi === last) {
+        continue;
+      }
+      updateCount(remaining, candidate.hanzi, -1);
+      const valid = hasValidArrangement(remaining, candidate.hanzi);
+      updateCount(remaining, candidate.hanzi, 1);
+      if (!valid) {
+        continue;
+      }
+      picked = candidate.hanzi;
+      break;
+    }
+
+    if (!picked) {
+      break;
+    }
+
+    sequence.push(picked);
+    updateCount(remaining, picked, -1);
+    current.set(picked, (current.get(picked) ?? 0) - activeTotalWeight);
+    last = picked;
   }
 
-  candidates.sort((a, b) => {
-    if (b[1] !== a[1]) {
-      return b[1] - a[1];
-    }
-    if (a[0] === b[0]) {
-      return 0;
-    }
-    return random() < 0.5 ? -1 : 1;
-  });
-
-  return candidates[0][0];
+  return sequence;
 }
 
 export function normalizeDuration(
@@ -230,20 +283,7 @@ export function buildReinforcementSequence({
     }
   }
 
-  const sequence: string[] = [];
-  let last = lastChar;
-  const remaining = trimCountsForAdjacency(counts, lastChar);
-  while (true) {
-    const picked = pickNextChar(remaining, last, random);
-    if (!picked) {
-      break;
-    }
-    sequence.push(picked);
-    remaining.set(picked, (remaining.get(picked) ?? 1) - 1);
-    last = picked;
-  }
-
-  return sequence;
+  return buildSmoothSequence(counts, random, lastChar);
 }
 
 export function createReinforcementGenerator(
